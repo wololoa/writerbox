@@ -1,0 +1,755 @@
+<!doctype html>
+<head>
+    <title>WriterBox</title>
+    <meta charset="utf-8"/>
+    
+    <link rel="stylesheet" href="css/docs.css">
+    <link rel="stylesheet" href="css/codemirror.css">
+    <link rel="stylesheet" href="css/show-hint.css">
+    <link rel="stylesheet" href="css/dialog.css">
+    <link rel="stylesheet" href="css/matchesonscrollbar.css">
+    <link rel="stylesheet" href="css/simplescrollbars.css">    
+    <link rel="stylesheet" href="css/contextMenu.css">
+
+    <style>
+        
+        .CodeMirror 
+        {
+            height: 98%;
+            width: auto;
+            text-align: justify!important;
+            padding-bottom: 2rem;
+        }
+
+        .CodeMirror .cm-spell-error:not(.cm-url):not(.cm-comment):not(.cm-tag):not(.cm-word) 
+        {
+            //background: rgba(0, 255, 0, .15);
+            text-decoration: underline;
+            text-decoration-color: red;
+            text-decoration-style: dotted;
+        }
+
+        .footer {
+            font-family: monospace;
+            font-size: 8pt;
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            padding: 0.35rem;
+            background-color: #efefef;
+            text-align: center;
+            z-index: 1000;
+            border-top: 0.05em dashed #b8b8e8;            
+        }
+
+        .toolset {
+            font-family: monospace;
+            font-size: 12pt;
+            position: fixed;
+            right: 0;
+            top: 0;
+            left: 0;
+            padding: 0.25rem;
+            background-color: #fbfbfb;
+            text-align: center;
+            z-index: 1000;
+            border-bottom: 0.05em dashed #b8b8e8;
+        }
+
+        button {
+            height: 3em;
+            width: 3em;
+            background-color: #b8b8e8;
+            color: #fff;
+            border: none;
+            border-radius: 2px;
+            text-transform: uppercase;
+        }
+
+        #wrapper {
+            text-align: center;
+            margin: 0 auto;
+            margin-top: 0.15em;
+            margin-bottom: 0.25em;
+            max-width: 600px;
+        }
+        #wrapper #title {
+            background-color: #fbfbfb;
+            width: 100%;
+            padding-top: 1em;
+            padding-bottom: 2px;
+            outline: none;
+            color: #000;
+            font-family: monospace;
+            font-size: 16px;
+            border: none;   
+            text-align: center;
+        }
+        #wrapper label {
+            display: block;
+            width: 100%;
+            height: 0px; // change this to showcase a line below the title
+            font-family: monospace;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+
+
+    </style>
+
+    <script src="js/codemirror.js"></script>
+    <script src="js/show-hint.js"></script>
+    <script src="js/javascript-hint.js"></script>
+    <script src="js/overlay.js"></script>    
+    <script src="js/dialog.js"></script>
+    <script src="js/searchcursor.js"></script>
+    <script src="js/search.js"></script>
+    <script src="js/annotatescrollbar.js"></script>
+    <script src="js/matchesonscrollbar.js"></script>
+    <script src="js/jump-to-line.js"></script>
+    <script src="js/simplescrollbars.js"></script>
+    <script src="js/placeholder.js"></script>  
+    <script src="js/javascript.js"></script>
+    <script src="js/jquery-3.4.0.min.js"></script>    
+
+    <!-- https://sweetalert2.github.io/ -->
+    <script src="js/sweetalert2.all.min.js"></script>
+
+    <style>
+        .swal2-popup {
+            font-family: monospace;
+        }
+
+        .fr-dashed-borders {
+            border: 0.1em dashed #b8b8e8;
+        }
+
+    </style>
+
+    <!-- http://ignitersworld.com/lab/contextMenu.html#intro -->
+    <script src="js/contextMenu.js"></script>
+
+    <!-- based on https://github.com/cfinke/Typo.js/blob/master/typo/typo.js, heavily modified -->
+    <script src="js/wordsData.js"></script>
+    <script src="js/typo.js"></script>
+    <script src="js/parser.js"></script>
+    <script src="js/nameGen.js"></script>
+</head>
+<body>
+
+    <div id="toolset" class="toolset"> 
+        <!-- TITLE -->
+        <div id="wrapper">
+            <input type="text" id="title" name="input" placeholder="Your title goes here..." onchange="updateTitle();"/>
+            <label for="input" id="counter"></label>
+        </div> 
+        <!-- END OF TITLE -->
+    </div>
+    <div id="footer" class="footer">-21-</div>
+    <div>WriterBox.<p>@2019</p></div> <!-- FIXME -->
+    <article id="workarea">
+        <form>
+            <textarea id="code" name="code" placeholder="... and your text goes here."></textarea>
+            <!--p></p><p style="font-family: monospace; font-size: 8pt; text-align: center;">- End -</p-->
+        </form>
+    
+    <script>
+
+
+// maybe this later??? : https://github.com/words/an-array-of-english-words
+
+// using this too: https://github.com/cfinke/Typo.js/tree/master/typo
+var typo = new Typo(); // "en_US" // TODO: add spanish dictionary !
+
+//var LINES_PER_PAGE = 27; // defined now at parser.js !
+
+
+//=======================================================================================
+// spell checker
+// taken from here: https://github.com/sparksuite/codemirror-spell-checker/blob/master/src/js/spell-checker.js
+//=======================================================================================
+
+
+// Create function
+function CodeMirrorSpellChecker(options) {
+    // Initialize
+    options = options || {};
+
+    // Verify
+    if(typeof options.codeMirrorInstance !== "function" || typeof options.codeMirrorInstance.defineMode !== "function") {
+        console.log("CodeMirror Spell Checker: You must provide an instance of CodeMirror via the option `codeMirrorInstance`");
+        return;
+    }
+
+    // Because some browsers don't support this functionality yet
+    if(!String.prototype.includes) {
+        String.prototype.includes = function() {
+            "use strict";
+            return String.prototype.indexOf.apply(this, arguments) !== -1;
+        };
+    }
+
+    CodeMirrorSpellChecker.typo = typo;
+
+    // Define the new mode
+    options.codeMirrorInstance.defineMode("spell-checker", function(config) {
+
+        // Define what separates a word
+        var rx_word = "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~ ";
+
+
+        // Create the overlay and such
+        var overlay = {
+            token: function(stream) {
+                var ch = stream.peek();
+                var word = "";
+
+                if(rx_word.includes(ch)) {
+                    stream.next();
+                    return null;
+                }
+
+                while((ch = stream.peek()) != null && !rx_word.includes(ch)) {
+                    word += ch;
+                    stream.next();
+                }
+
+                if(CodeMirrorSpellChecker.typo && !CodeMirrorSpellChecker.typo.check(word))
+                    return "spell-error"; // CSS class: cm-spell-error
+
+                return null;
+            }
+        };
+
+        var mode = options.codeMirrorInstance.getMode(
+            config, config.backdrop || "text/plain"
+        );
+
+        return options.codeMirrorInstance.overlayMode(mode, overlay, true);
+    });
+}
+
+//=======================================================================================
+
+CodeMirrorSpellChecker({
+    codeMirrorInstance: CodeMirror,
+});
+
+
+//-----------------------------------------------------------------------
+// Taken from: https://github.com/Gozala/codemirror-persist
+
+function onChange(editor) 
+{
+    localStorage[window.location.href.split("#")[0]] = editor.getValue()
+}
+
+function setup(editor, value) 
+{
+    if (value) 
+    {
+        var address = window.location.href.split("#")[0]
+        var persisted = localStorage[address] || editor.getValue()
+        editor.setValue(persisted)
+        editor.on("change", onChange)
+    } 
+    else 
+    {
+        editor.off("change", onChange)
+    }
+}
+
+function plugin(CodeMirror) 
+{
+    CodeMirror.defineOption("persist", false, setup)
+}
+
+plugin(CodeMirror);
+
+//-----------------------------------------------------------------------
+
+
+
+// Initialize CodeMirror editor
+var editor = CodeMirror.fromTextArea(document.getElementById("code"), {
+    mode:               "spell-checker", //"javascript",
+    backdrop:           "gfm",
+    tabMode:            "indent",
+    styleActiveLine:    true,
+    lineNumbers:        false, //true,
+    lineWrapping:       true,
+    autoCloseTags:      true,
+    indentUnit:         0,
+    foldGutter:         false,
+    dragDrop:           true,
+    persist:            true,
+    scrollbarStyle:     "simple",
+    extraKeys: {
+        "Ctrl-Space": "autocomplete",
+        "Ctrl-B": "makeBold",
+        "Ctrl-I": "makeItalic"
+    },
+
+    gutters: [] //"CodeMirror-lint-markers", "CodeMirror-linenumbers", "CodeMirror-foldgutter"]
+});
+
+
+
+
+/*
+ * Used for auto suggestion / complete.
+ */
+function findWords(base)
+{
+    var options = [],
+        word = "";
+
+    if(base.length < 3) return [];
+    for(var i = 0; i < dictionary.length; i++)
+    {
+        word = dictionary[i];
+        if(word[0] == base[0].toLowerCase() && dictionary[i].includes(base.toLowerCase())) options.push(dictionary[i]);
+        if(options.length > 12) break; // TODO: make this configurable
+    }
+  
+    // sort them alphabeticaly 
+    options.sort(function(a, b){
+    // ASC  -> a.length - b.length
+    // DESC -> b.length - a.length
+        return a.length - b.length;
+    });
+
+    return options;
+}
+
+
+var orig = CodeMirror.hint.javascript;
+CodeMirror.hint.custom = function(cm) 
+{ 
+    var word = editor.findWordAt(editor.getCursor()); 
+    var current = editor.getRange(word.anchor, word.head);
+    var inner = orig(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
+
+    // if it's a mistake - display how to fix it
+    // todo: merge the two of them!
+    if(!typo.check(current) && current.length >= 3) // && word.line != editor.doc.lineCount())
+    {
+        inner.list = typo.suggest(current);
+    }
+    else
+    {
+        inner.list = findWords(current);
+    }
+
+    return inner;
+};
+
+
+
+CodeMirror.commands.autocomplete = function(cm) 
+{
+    cm.showHint({hint: CodeMirror.hint.custom, completeSingle: false});
+}
+
+
+// Testing going BOLD
+CodeMirror.commands.makeBold = function(cm)
+{
+    var s = cm.getSelection(),
+        t = s.slice(0, 2) === '**' && s.slice(-2) === '**';
+    cm.replaceSelection(t ? s.slice(2, -2) : '**' + s + '**', 'around');
+    //console.log(s, t);
+    //cm.markText()
+
+
+    /*
+    var word = editor.findWordAt(editor.getCursor()); 
+    console.log(word)
+    cm.markText({ line: word.anchor.line, ch: word.anchor.ch },
+        { line: word.head.line, ch: word.head.ch + 5},
+        //word.anchor,
+        //word.head, 
+        { css: "font-weight: bold;" });
+    */;
+}
+
+CodeMirror.commands.makeItalic = function(cm)
+{
+    var s = cm.getSelection(),
+        t = s.slice(0, 1) === '_' && s.slice(-1) === '_';
+    cm.replaceSelection(t ? s.slice(1, -1) : '_' + s + '_', 'around');
+}
+
+
+// TODO: CHECK WHEN YOU ARE JUST MOVING AROUND THE TEXT WITH ARROWS AND STUFF !!!!
+editor.on("keyup", function (cm, event) 
+{  
+    // TODO: refactor this to be faster and not query the doc every single time for all
+    var line = editor.doc.getCursor().line,   //Cursor line
+        ch = editor.doc.getCursor().ch,       //Cursor character
+        lastWord = editor.getLine(line).substr(ch - 3, ch),
+        lastChar = editor.getLine(line).substr(ch - 1, ch),
+        hasEmptySpace = editor.getLine(line).substr(ch - 3, ch).includes(" "); // this is stupid, could be improved a lot
+
+    if (!hasEmptySpace &&               // some old bullshit
+        lastChar != "!" &&              // more bullshit
+        !cm.state.completionActive &&   // Enables keyboard navigation in autocomplete list
+        ch > 0 &&                       // don't open the list on the first character !
+        event.keyCode != 13 &&          // Enter - do not open autocomplete list just after item has been selected in it
+        event.keyCode != 27)            // ESC - don't open if you are hitting escape!
+    {
+        CodeMirror.commands.autocomplete(cm);
+    }
+});
+
+
+
+// not working perfectly :(
+function fixWord(fix)
+{
+    var word = editor.findWordAt(editor.getCursor()); 
+    var current = editor.getRange(word.anchor, word.head);
+    editor.doc.replaceRange(fix, word.anchor, word.head);
+
+    /*
+    //SearchCursor.replace(alter, current);
+    cm.operation(function() {
+      for (var cursor = editor.getSearchCursor(cm, query); cursor.findNext();) {
+        if (typeof query != "string") {
+          var match = cm.getRange(cursor.from(), cursor.to()).match(query);
+          cursor.replace(alter.replace(/\$(\d)/g, function(_, i) {return match[i];}));
+        } else cursor.replace(alter);
+      }
+    });*/
+}
+
+
+
+function updatePageNumber()
+{
+    var rect = editor.getWrapperElement().getBoundingClientRect();
+
+
+    var topVisibleLine = editor.lineAtHeight((rect.height - rect.top) / 12, "window"),
+        bottomVisibleLine = editor.lineAtHeight(rect.bottom, "window"),
+        page = parseInt(topVisibleLine / LINES_PER_PAGE) + 1,
+        lines = editor.lineCount(),
+        totalPages = parseInt(lines / LINES_PER_PAGE) + 1;
+
+    document.getElementById("footer").innerHTML = "- " + page + " / " + totalPages + " -";
+}
+
+
+window.onscroll = function() 
+{
+    updatePageNumber();
+};
+
+
+updatePageNumber(); // first update right away
+
+
+// contextMenu.js
+var menu = 
+[{ 
+    name: 'WriterBox (github)',
+    img: 'gfx/icon-small.png',
+    fun: goToRepo
+},
+{
+    name: 'Save / Export',
+    subMenu: [
+        {
+            name: "txt",
+            fun: saveToFile
+        },
+        {
+            name: "pdf [nope]"
+        }
+    ]
+},
+{
+    name: 'Languages',
+    subMenu: [
+        {
+            name: "en",
+        },
+        {
+            name: "es [nope]"
+        }
+    ]
+},
+{
+    name: 'Generators',
+    subMenu: [
+        {
+            name: "Name (male)",
+            fun: genMaleName
+        },
+        {
+            name: "Name (female)",
+            fun: genFemaleName
+        },
+        {
+            name: "City [nope]"
+        }
+    ]
+},
+{
+    name: 'Reformat',
+    subMenu: [
+        {
+            name: "Narrative",
+            fun: reformat
+        },
+        {
+            name: "Cinema / script [nope]"
+        }        
+    ]
+},
+{
+    name: "Stats",
+    fun: showStats
+},
+{
+    name: "Info",
+    fun: showInfo
+}];
+
+
+$('body').contextMenu(menu,{triggerOn:'contextmenu'});
+
+
+
+/*
+// repopulate the context menu !!! - when right clicking on top of a word with errors, this will show alternatives
+// NOT WORKING
+editor.on("cursorActivity", function(cm){
+
+    var word = editor.findWordAt(editor.getCursor()); 
+    var current = editor.getRange(word.anchor, word.head);
+    
+    //menu = [{ name: "WriterBox" }];
+
+    // the word is wrong!
+    if(!typo.check(current) && current.length >= 3)
+    {
+        var options = typo.suggest(current);
+
+        if(options.length > 0)
+        {
+            menu = [];
+            var op = "";
+            for(var i = 0; i < options.length; i++)
+            {
+                op = options[i];
+                console.log("aarg ", op)
+
+                var entry = { name: op, fun: function cb(d, e) { console.log("final: ", d, e); fixWord(i); } };
+                menu.push(entry);
+            }
+
+            console.log(menu)
+            $('body').contextMenu(menu, { triggerOn:'contextmenu' });
+            console.log("puto menu: ", menu)
+        }
+    }
+    else 
+    {
+        //$('body').contextMenu('destroy');
+        //menu = [{ name: "No options available."}];
+        $('body').contextMenu(menu, { triggerOn:'contextmenu' });
+    }
+
+
+    updatePageNumber();
+});*/
+
+
+
+// save the content to .txt
+function saveToFile()
+{
+    var textFileAsBlob = new Blob([editor.getValue()], {type:'text/plain'});
+
+    // filename to save as
+    var title = document.getElementById("title").value;
+    if(!title || title.length < 1) title = "untitled";
+    var fileNameToSaveAs = "" + title + ".txt";
+
+    var downloadLink = document.createElement("a");
+    downloadLink.download = fileNameToSaveAs;
+    downloadLink.innerHTML = "LINKTITLE";
+
+    window.URL = window.URL || window.webkitURL;
+
+    downloadLink.href = window.URL.createObjectURL(textFileAsBlob);
+    downloadLink.onclick = destroyClickedElement;
+    downloadLink.style.display = "none";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+
+    function destroyClickedElement(event) {
+        document.body.removeChild(event.target);
+    }
+}
+
+
+
+// TODO: export to pdf !
+
+// open the repo link
+function goToRepo()
+{
+    var win = window.open("https://github.com/wololoa/writerbox", '_blank');
+    win.focus();
+}
+
+
+// show info / help
+function showInfo()
+{
+    Swal.fire({
+        title: `<h2><span style="font-size: 24px;"><u><i>WriterBox</i></u></span></h2>`,
+        type: 'info',
+        width: 1100,
+        animation: false,
+        customClass: "info-popup",
+        html:
+            `
+<h2 style="text-align: justify;"><span style="font-size: 12px;"><strong>WriterBox&nbsp;</strong>is a super simple toolbox for quickly writing stuff. It&#39;s built using a bunch of tools (mainly <a href="https://codemirror.net/">codemirror</a>).</span></h2>
+<h2 style="text-align: justify;"><span style="font-size: 12px;"><strong>Features:</strong></span></h2>
+<ul>
+    <li style="text-align: justify;"><span style="font-size: 12px;">Saves automatically to local storage.</span></li>
+    <li style="text-align: justify;"><span style="font-size: 12px;">Auto completion and autosuggestion via <a href="https://github.com/cfinke/Typo.js/">typo.js</a>.<br></span></li>
+    <li style="text-align: justify;"><span style="font-size: 12px;">English dictionary (Spanish on its way).</span></li>
+    <li style="text-align: justify;"><span style="font-size: 12px;">Re-format: correct automatically mistakes like wrong empty spaces between words, lack of punctuation, uppercase words, etc. The idea is that you should just write and let the tool format it and make it pretty for you. Only &quot;narrative&quot; formatting is available, but more are planned (cinema / script, poetry, scientific paper, etc).</span></li>
+    <li
+        style="text-align: justify;"><span style="font-size: 12px;">Simple random word generators (names or cities).&nbsp;</span></li>
+</ul>
+<p style="text-align: justify;"><span style="font-size: 12px;">The editor allows to export to .txt files and .pdf (WIP). It doesn&#39;t allow (yet) to export / link with cloud services (like Google Drive).</span></p>
+<p style="text-align: justify;"><span style="font-size: 12px;"><strong>Commands:</strong></span></p>
+<ul>
+    <li style="text-align: justify;"><span style="font-size: 12px;">Right-click on the document body to access all the features mentioned above (yep, there are no buttons here that might distract you from writing).</span></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Ctrl-Space</strong>: auto complete / suggest.</span></dt></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Ctrl-F / Cmd-F</strong>: Start searching.</span></dt></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Ctrl-G / Cmd-G</strong>: Find next.</span></dt></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Shift-Ctrl-G / Shift-Cmd-G</strong>: Find previous.</span></dt></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Shift-Ctrl-F / Cmd-Option-F</strong>: Replace.</span></dt></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Shift-Ctrl-R / Shift-Cmd-Option-F</strong>: Replace all.</span></dt></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Alt-F</strong>: Persistent search (dialog doesn&#39;t autoclose, enter to find next, Shift-Enter to find previous).</span></dt></li>
+    <li><dt style="text-align: justify;"><span style="font-size: 12px;"><strong>Alt-G</strong>: Jump to line.</span><span style="font-size: 14px;"><br></span></dt></li>
+</ul>
+            `,
+        showCloseButton:    true,
+        showCancelButton:   false,
+        focusConfirm:       false,
+        confirmButtonText:  'OK',
+        buttonsStyling: false
+    });
+}
+
+
+// show stats of your document - kinda shitty right now
+function showStats()
+{
+    calculateStats(editor.getValue());
+
+    Swal.fire({
+        title: `<h2><span style="font-size: 24px;"><u><i>Statistics</i></u></span></h2>`,
+        type: 'warning',
+        width: 600,
+        animation: false,
+        customClass: "info-popup",
+        html:
+            `
+<table class="fr-dashed-borders" style="width: 100%;">
+    <tbody>
+        <tr>
+            <td style="width: 50.0000%;">
+                <div style="text-align: left;"><strong>Words</strong></div>
+            </td>
+            <td style="width: 50.0000%;">` + STATS.words + `</td>
+        </tr>
+        <tr>
+            <td style="width: 50.0000%;">
+                <div style="text-align: left;"><strong>Characters</strong></div>
+            </td>
+            <td style="width: 50.0000%;">` + STATS.characters + `</td>
+        </tr>        
+        <tr>
+            <td style="width: 50.0000%;">
+                <div style="text-align: left;"><strong>Sentences</strong></div>
+            </td>
+            <td style="width: 50.0000%;">` + STATS.sentences + `</td>
+        </tr>
+        <tr>
+            <td style="width: 50.0000%;">
+                <div style="text-align: left;"><strong>Pages </strong>(estimated)</div>
+            </td>
+            <td style="width: 50.0000%;">` + STATS.pages + `</td>
+        </tr>
+    </tbody>
+</table>
+<p><br></p>
+<p><br></p>
+<p><span style="font-size: 18px;"><br></span></p>
+            `,
+        showCloseButton:    true,
+        showCancelButton:   false,
+        focusConfirm:       false,
+        confirmButtonText:  'OK',
+        buttonsStyling: false
+    });    
+}
+
+
+// fix mistakes for the narrative parser
+function reformat()
+{
+    var text = editor.getValue();
+    text = process(text);
+    editor.setValue(text);
+}
+
+
+function insertTextAtCursor(editor, text) {
+    var doc = editor.getDoc();
+    var cursor = doc.getCursor();
+    doc.replaceRange(text, cursor);
+}
+
+function genMaleName()
+{
+    var name = generateName("male");
+    insertTextAtCursor(editor, name);
+}
+
+
+function genFemaleName()
+{
+    var name = generateName("female");
+    insertTextAtCursor(editor, name);
+}
+
+
+//-------------------------------------------------------------------
+// super shitty, but if it works...
+
+var currentTitle = localStorage.getItem('writerbox_current_title');
+document.getElementById("title").value = currentTitle;
+
+function updateTitle()
+{
+    var title = document.getElementById("title").value;
+    if(!title || title.length < 1) title = "";
+
+    localStorage.setItem('writerbox_current_title', title);
+}
+
+
+</script>
+</article>
+</body>
+
